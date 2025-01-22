@@ -1,0 +1,6 @@
+Flask
+CORS
+Flask-SQLAlchemy
+flask_socketio
+uuid
+flask-cors

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tic-Tac-Toe Game</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f8f9fa;
+        }
+        .game-container {
+            text-align: center;
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 100px);
+            grid-template-rows: repeat(3, 100px);
+            gap: 5px;
+        }
+        .cell {
+            width: 100px;
+            height: 100px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #e9ecef;
+            border: 1px solid #ced4da;
+            font-size: 3rem;
+            cursor: pointer;
+        }
+        .cell.taken.X {
+            background-color: #ff0000;
+            color: white;
+        }
+        .cell.taken.O {
+            background-color: #0000ff;
+            color: white;
+        }
+        .message {
+            margin-top: 20px;
+            font-size: 1.2rem;
+        }
+        .game-controls button {
+            margin: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h2>Tic-Tac-Toe</h2>
+        <div id="gameStatus" class="message">Waiting for your move...</div>
+        <div id="gameId" class="message" style="font-size: 1rem;"></div>
+        <div class="board" id="board">
+            <button class="cell" data-index="0"></button>
+            <button class="cell" data-index="1"></button>
+            <button class="cell" data-index="2"></button>
+            <button class="cell" data-index="3"></button>
+            <button class="cell" data-index="4"></button>
+            <button class="cell" data-index="5"></button>
+            <button class="cell" data-index="6"></button>
+            <button class="cell" data-index="7"></button>
+            <button class="cell" data-index="8"></button>
+        </div>
+        <div class="game-controls">
+            <button id="startBtn" class="btn btn-primary">Start New Game</button>
+            <button id="joinBtn" class="btn btn-secondary">Join Existing Game</button>
+            <button id="restartBtn" class="btn btn-warning" style="display:none;">Restart Game</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/socket.io-client/dist/socket.io.min.js"></script>
+    <script>
+        const socket = io('http://localhost:5000');
+        const board = document.getElementById('board');
+        const gameStatus = document.getElementById('gameStatus');
+        const gameIdDisplay = document.getElementById('gameId');
+        const restartBtn = document.getElementById('restartBtn');
+        let gameState = Array(9).fill(null);
+        let gameId = '';
+        let playerSymbol = '';
+        let currentTurn = '';
+
+        socket.on('game_created', (data) => {
+            gameId = data.game_id;
+            playerSymbol = data.symbol;
+            gameIdDisplay.textContent = `Game ID: ${gameId}`;
+            gameStatus.textContent = `You are '${playerSymbol}'. Waiting for an opponent...`;
+        });
+
+        socket.on('player_joined', (data) => {
+            if (data.message === 'Player 2 joined') {
+                gameStatus.textContent = 'Player 2 has joined. Ready to play!';
+            } else if (data.message === 'Game Ready') {
+                gameStatus.textContent = 'Game Ready. Waiting for Player 1 to start...';
+            }
+        });
+
+        document.getElementById('startBtn').addEventListener('click', () => {
+            socket.emit('create_game');
+            gameStatus.textContent = 'Game Created. Waiting for an opponent...';
+            gameIdDisplay.textContent = '';
+            gameState = Array(9).fill(null);
+            resetBoard();
+        });
+
+        document.getElementById('joinBtn').addEventListener('click', () => {
+            const inputGameId = prompt('Enter Game ID:');
+            socket.emit('join_game', { game_id: inputGameId });
+            gameIdDisplay.textContent = `Game ID: ${inputGameId}`;
+            gameStatus.textContent = 'Waiting for Player 1 to start...';
+            gameState = Array(9).fill(null);
+            resetBoard();
+        });
+
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            socket.emit('restart_game', { game_id: gameId });
+            gameState = Array(9).fill(null);
+            resetBoard();
+        });
+
+        board.addEventListener('click', (e) => {
+            const cell = e.target;
+            const index = cell.getAttribute('data-index');
+            if (!gameState[index] && currentTurn === playerSymbol) {
+                gameState[index] = playerSymbol;
+                socket.emit('make_move', { game_id: gameId, move: index });
+                updateBoard();
+                checkWinner();
+            }
+        });
+
+        socket.on('update_board', (data) => {
+            gameState = data.board;
+            currentTurn = data.current_turn;
+            updateBoard();
+            checkWinner();
+        });
+
+        socket.on('game_over', (data) => {
+            gameStatus.textContent = data.message;
+            restartBtn.style.display = 'inline-block';
+        });
+
+        function resetBoard() {
+            document.querySelectorAll('.cell').forEach(cell => {
+                cell.textContent = '';
+                cell.classList.remove('taken', 'X', 'O');
+            });
+        }
+
+        function updateBoard() {
+            document.querySelectorAll('.cell').forEach((cell, index) => {
+                if (gameState[index]) {
+                    cell.textContent = gameState[index];
+                    cell.classList.add('taken', gameState[index]);
+                }
+            });
+        }
+
+        function checkWinner() {
+            const winningCombinations = [
+                [0, 1, 2], [3, 4, 5], [6, 7, 8],  // Rows
+                [0, 3, 6], [1, 4, 7], [2, 5, 8],  // Columns
+                [0, 4, 8], [2, 4, 6]               // Diagonals
+            ];
+            for (const combo of winningCombinations) {
+                const [a, b, c] = combo;
+                if (gameState[a] && gameState[a] === gameState[b] && gameState[a] === gameState[c]) {
+                    gameStatus.textContent = `${gameState[a]} wins!`;
+                    socket.emit('game_over', { game_id: gameId, winner: gameState[a] });
+                    return;
+                }
+            }
+            if (gameState.every(cell => cell !== null)) {
+                gameStatus.textContent = 'It\'s a tie!';
+                socket.emit('game_over', { game_id: gameId, winner: 'Tie' });
+            } else {
+                currentTurn = currentTurn === 'X' ? 'O' : 'X';
+                gameStatus.textContent = `Player ${currentTurn}'s turn`;
+            }
+        }
+    </script>
+</body>
+</html>
